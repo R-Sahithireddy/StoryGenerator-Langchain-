@@ -1,0 +1,94 @@
+import os
+from langchain.chains import LLMChain
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+import config
+
+os.environ["OPENAI_API_KEY"] = config.OPENAI_API_KEY
+generated_story_file = "generated_stories.txt"
+
+categories = [
+    "Mythical Creatures",  # Stories about fantastical beings
+    "Animal Adventures",   # Adventures featuring different animals
+    "Underwater Wonders",  # Stories exploring the underwater world
+    "Time Travel Quests",   # Adventures through different time periods
+    "Sleepytime Tales",     # Stories for bedtime with a calming tone
+    "Friendship Fun",        # Stories about the importance of friendship
+]
+
+# Templates for different story categories
+category_templates = {
+    "Mythical Creatures": (
+        "Tell a long story using simple english words about a boy/girl encountering a mythical creature (unicorn, dragon, etc.) and having an exciting adventure. Describe the creature's appearance and special abilities. Include a lesson about bravery or kindness. Remember, Keep the english basic and Make sentences super short, use basic nouns and verbs, repeat key words. The story is about {story_topic}"
+    ),
+    "Animal Adventures": (
+        "Tell a long story using simpler english words about a brave animal (lion, elephant, etc.) going on a journey and facing challenges. Include other friendly animals they meet along the way and how they help each other. The story is about {story_topic}"
+    ),
+    "Underwater Wonders": (
+        "Tell a long story using simpler english words about a curious fish (clownfish, dolphin, etc.) exploring the underwater world. Describe the colorful fish, coral reefs, and other interesting creatures they meet. The story is about {story_topic}"
+    ),
+    "Time Travel Quests": (
+        "Tell a long story using simpler english words about a group of friends who discover a magical way to travel through time (time machine, portal, etc.)  They visit a different historical period and learn about the past. The story is about {story_topic}"
+    ),
+    "Sleepytime Tales": (
+        "Tell a calming story using simple english words to help a child fall asleep. Describe a peaceful night scene with fireflies, owls, and other creatures preparing for bed. The story is about {story_topic}"
+    ),
+    "Friendship Fun": (
+        "Tell a story using simple english words about two different animals (lion and zebra, etc.) who become unlikely friends. Describe the fun activities they do together and the importance of having friends who are different from you. The story is about {story_topic}"
+    ),
+}
+
+simplification_template = "Tell a simple yet longer story for little ones . Use easy words like Happy, Sad, Joy, Water, Bird, Tree, Sky. Keep sentences short, like 'The rocket went up!'.and Tell what's happening in a fun way, like 'The astronaut jumped on the moon!'. Use short sentences and easy words. Tell the story with short pauses, not too many commas. Use simple words and make it exciting for little kids.Make the story sound like it's being told to a 2-year-old. End the story with a clear ending, like 'The end'"
+
+toddlers_review_template = """
+Review the generated story:
+
+"{generated_story}"
+
+- Is the story appropriate for toddlers aged 1-5?
+- Are the words simple and sentences short?
+- Is the content engaging and fun for young children?
+- Does the story avoid anything that might be scary, violent, or inappropriate for toddlers?
+- Does the story contain any obscene or profane language?
+- Does it include violence, gore, sexual content, or other mature themes?
+- Does it contain any language that is inappropriate for young children?
+
+
+Provide feedback on how well the generated story aligns with these criteria.
+"""
+
+toddlers_review_agent = LLMChain(llm=OpenAI(temperature=0.5, openai_api_key=config.OPENAI_API_KEY), prompt=PromptTemplate(input_variables=["generated_story"], template=toddlers_review_template))
+
+
+story_template = PromptTemplate(
+    input_variables=['story_topic'],
+    template="Story: {story}."
+)
+
+agents = {
+    category: LLMChain(llm=OpenAI(temperature=0.6, openai_api_key=config.OPENAI_API_KEY, max_tokens=700), prompt=PromptTemplate(input_variables=["story_topic"],template=category_templates[category]))
+    for category in categories
+}
+
+def generate_story(category):
+    agent = agents[category]
+    story_topic = f"the story of {category}"
+    simplified_response = agent.run(simplification_template.format(story_topic=story_topic))
+    review= toddlers_review_agent.run(toddlers_review_template.format(generated_story=simplified_response))
+    #print("Review:")
+    #print(review)
+        
+    if ("not appropriate" or "inappropriate")in review.lower():
+        #print("Story Not Appropriate, Generating New Story..")
+        generate_story(category)
+
+    with open(generated_story_file, "r") as file:
+        if simplified_response in file.read():
+            generate_story(category)
+
+    with open(generated_story_file, "a") as file:
+        file.write(simplified_response + "\n")
+        
+    print(story_template.format(story=simplified_response))
+    return simplified_response
+
